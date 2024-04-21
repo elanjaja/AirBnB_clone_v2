@@ -1,98 +1,80 @@
 #!/usr/bin/python3
 """
-This module deploys web_static to my servers
+creates and distributes an archive to your web servers
+fab -f 3-deploy_web_static.py deploy -i ssh-key -u ubuntu
 """
 
-from fabric.api import env
+from datetime import datetime
+import os.path
+from fabric.api import put, run, env, local
 
-env.hosts = ['54.242.98.93', '35.168.3.68']
-# store .tgz path
-paths = []
+env.hosts = ['35.243.128.200', '3.239.120.96']
 
 
 def do_pack():
     """
-    Generates a .tgz archive from the contents of the web_static
+    making an archive on web_static folder
     """
-    from fabric.api import local
-    from datetime import datetime
-
-    local("mkdir -p versions")
-
-    date = datetime.now().strftime('%Y%m%d%H%M%S')
-    path = 'versions/web_static_{}.tgz'.format(date)
-    ret = local('tar -cvzf {} web_static'.format(path))
-    if ret.succeeded:
-        return path
-    else:
+    dt = datetime.utcnow()
+    file = "versions/web_static_{}{}{}{}{}{}.tgz".format(dt.year,
+                                                         dt.month,
+                                                         dt.day,
+                                                         dt.hour,
+                                                         dt.minute,
+                                                         dt.second)
+    if os.path.isdir("versions") is False:
+        if local("mkdir -p versions").failed is True:
+            return None
+    if local("tar -cvzf {} web_static".format(file)).failed is True:
         return None
+    return file
 
 
 def do_deploy(archive_path):
+    """Distributes an archive to a web server.
+    Args:
+        archive_path (str): The path of the archive to distribute.
+    Returns:
+        If the file doesn't exist at archive_path or an error occurs - False.
+        Otherwise - True.
     """
-    Upload archive to env.hosts & uncompress it
-    """
-    from fabric.api import run, put
-    import re
+    if os.path.isfile(archive_path) is False:
+        return False
+    file = archive_path.split("/")[-1]
+    name = file.split(".")[0]
 
-    if not archive_path:
+    if put(archive_path, "/tmp/{}".format(file)).failed is True:
         return False
-
-    # get folder name where to uncompress archive
-    match = re.compile(r'.*/(\w+).tgz$').search(archive_path)
-    if not match:
+    if run("rm -rf /data/web_static/releases/{}/".
+           format(name)).failed is True:
         return False
-    folder = match.group(1)
-
-    # upload archive to server
-    ret = put(archive_path, '/tmp/')
-    if not ret.succeeded:
+    if run("mkdir -p /data/web_static/releases/{}/".
+           format(name)).failed is True:
         return False
-
-    # uncompress archive
-    ret = run("mkdir -p /data/web_static/releases/{}".format(folder))
-    if not ret.succeeded:
+    if run("tar -xzf /tmp/{} -C /data/web_static/releases/{}/".
+           format(file, name)).failed is True:
         return False
-    ret = run("tar -xzf /tmp/{}.tgz -C \
-               /data/web_static/releases/{}".format(folder, folder))
-    if not ret.succeeded:
+    if run("rm /tmp/{}".format(file)).failed is True:
         return False
-
-    # delete archive from server & move files
-    ret = run("rm /tmp/{}.tgz".format(folder))
-    if not ret.succeeded:
+    if run("mv /data/web_static/releases/{}/web_static/* "
+           "/data/web_static/releases/{}/".format(name, name)).failed is True:
         return False
-    ret = run("mv /data/web_static/releases/{}/web_static/* \
-               /data/web_static/releases/{}/".format(folder, folder))
-    if not ret.succeeded:
+    if run("rm -rf /data/web_static/releases/{}/web_static".
+           format(name)).failed is True:
         return False
-    ret = run("rm -rf /data/web_static/releases/{}/web_static/".format(folder))
-    if not ret.succeeded:
+    if run("rm -rf /data/web_static/current").failed is True:
         return False
-
-    # delete symlink and create new one
-    ret = run("rm -rf /data/web_static/current")
-    if not ret.succeeded:
+    if run("ln -s /data/web_static/releases/{}/ /data/web_static/current".
+           format(name)).failed is True:
         return False
-    ret = run("ln -fs /data/web_static/releases/{}/ \
-               /data/web_static/current".format(folder))
-    if not ret.succeeded:
-        return False
-
     return True
 
 
 def deploy():
     """
-    Genrates .tgz archive, upload it to servers &
-    uncompress it (full deployement)
+    Create and distribute an archive to a web server
     """
-    if not paths:
-        archive = do_pack()
-        if not archive:
-            return False
-        paths.append(archive)
-    else:
-        archive = paths[0]
-
-    return do_deploy(archive)
+    file = do_pack()
+    if file is None:
+        return False
+    return do_deploy(file)

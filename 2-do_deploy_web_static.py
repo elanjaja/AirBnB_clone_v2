@@ -1,62 +1,46 @@
 #!/usr/bin/python3
 """
-This script distributes archive of web_static to web servers
+Fabric script to deploy tgz archive
+fab -f 2-do_deploy_web_static.py do_deploy:archive_path=filepath
+    -i private-key -u user
 """
 
-from fabric.api import env
+from os.path import exists
+from fabric.api import put, run, env
 
-env.hosts = ['54.242.98.93', '35.168.3.68']
+env.hosts = ['35.243.128.200', '3.239.120.96']
 
 
 def do_deploy(archive_path):
     """
-    Upload archive to env.hosts & uncompress it
+    copies archive file from local to my webservers
     """
-    from fabric.api import run, put
-    import re
 
-    if not archive_path:
+    if not exists(archive_path):
         return False
+    try:
+        file_name = archive_path.split("/")[-1].split(".")[0]
+        put(archive_path, "/tmp/")
 
-    # get folder name where to uncompress archive
-    match = re.compile(r'.*/(\w+).tgz$').search(archive_path)
-    if not match:
-        return False
-    folder = match.group(1)
+        run("mkdir -p /data/web_static/releases/{}".format(file_name))
 
-    # upload archive to server
-    ret = put(archive_path, '/tmp/')
-    if not ret.succeeded:
-        return False
+        run("tar -xzf /tmp/{}.tgz -C /data/web_static/releases/{}/"
+            .format(file_name, file_name))
 
-    # uncompress archive
-    ret = run("mkdir -p /data/web_static/releases/{}".format(folder))
-    if not ret.succeeded:
-        return False
-    ret = run("tar -xzf /tmp/{}.tgz -C \
-               /data/web_static/releases/{}".format(folder, folder))
-    if not ret.succeeded:
-        return False
+        run('rm -rf /tmp/{}.tgz'.format(file_name))
 
-    # delete archive from server & move files
-    ret = run("rm /tmp/{}.tgz".format(folder))
-    if not ret.succeeded:
-        return False
-    ret = run("mv /data/web_static/releases/{}/web_static/* \
-               /data/web_static/releases/{}/".format(folder, folder))
-    if not ret.succeeded:
-        return False
-    ret = run("rm -rf /data/web_static/releases/{}/web_static/".format(folder))
-    if not ret.succeeded:
-        return False
+        run(('mv /data/web_static/releases/{}/web_static/* ' +
+            '/data/web_static/releases/{}/')
+            .format(file_name, file_name))
 
-    # delete symlink and create new one
-    ret = run("rm -rf /data/web_static/current")
-    if not ret.succeeded:
-        return False
-    ret = run("ln -fs /data/web_static/releases/{}/ \
-               /data/web_static/current".format(folder))
-    if not ret.succeeded:
-        return False
+        run('rm -rf /data/web_static/releases/{}/web_static'
+            .format(file_name))
 
-    return True
+        run('rm -rf /data/web_static/current')
+
+        run(('ln -s /data/web_static/releases/{}/' +
+            ' /data/web_static/current')
+            .format(file_name))
+        return True
+    except Exception:
+        return False
