@@ -1,33 +1,150 @@
 #!/usr/bin/python3
-"""
-Deletes out-of-date archives
-fab -f 100-clean_web_static.py do_clean:number=2
-    -i ssh-key -u ubuntu > /dev/null 2>&1
-"""
-
+"""2-do_deploy_web_static module"""
 import os
+from datetime import datetime
 from fabric.api import *
 
-env.hosts = ['35.243.128.200', '3.239.120.96']
+
+env.hosts = ["54.86.45.44", "52.91.122.202"]
+
+
+def do_pack():
+    """Fabric script that generates a .tgz archive
+    from the contents of the web_static folder of
+    your AirBnB Clone repo
+    """
+
+    """Check if version dir exits:"""
+    path = "versions"
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+    """Get the current time and date"""
+    currentDateAndTime = datetime.now()
+    archiveTime = currentDateAndTime.strftime("%Y%m%d%H%M%S")
+
+    """Naming of the archive file"""
+    name_of_archive = "web_static_{}.tgz".format(archiveTime)
+
+    archive_path = "{}/{}".format(path, name_of_archive)
+
+    content = "web_static"
+
+    """Using of the tar command"""
+    result = local("tar -cvzf {} {}".format(archive_path, content))
+
+    if result.succeeded:
+        return archive_path
+
+    return None
+
+
+def do_deploy(archive_path):
+    """Distributes an archive to your web servers,
+    using the function do_deploy
+    Args:
+        archive_path: path to the archive
+    Return:
+        True if sucessfully and False otherwise.
+    """
+
+    """If archive_path does not exit"""
+    if not os.path.exists(archive_path):
+        return False
+
+    try:
+        archived_file = archive_path[9:]
+
+        """Without the extension."""
+        file_without_ext = archived_file[:-4]
+
+        """Full path without the extension of the file"""
+        file_dir = "/data/web_static/releases/{}/".format(
+                file_without_ext)
+
+        """Retrive the file name"""
+        archived_file = "/tmp/" + archive_path[9:]
+
+        """Upload to /tmp/ directory of the server"""
+        put(archive_path, "/tmp/")
+
+        """Create the directory & Uncompress the file"""
+        run("mkdir -p {}".format(file_dir))
+
+        run(
+                "tar -xvf {} -C {}".format(
+                    archived_file,
+                    file_dir
+                    )
+                )
+
+        """Remove thr archived file"""
+        run("rm {}".format(archived_file))
+
+        run("mv {}web_static/* {}".format(file_dir, file_dir))
+
+        run("rm -rf {}web_static".format(file_dir))
+
+        run("rm -rf {}".format("/data/web_static/current"))
+
+        """Create a symbolic link"""
+        run("ln -s {} /data/web_static/current".format(file_dir))
+
+        print("New version deployed!")
+
+        return True
+    except Exception as e:
+        return False
+
+
+def deploy():
+    """
+    Creates and distributes an archive to your web servers
+    """
+
+    archive_path = do_pack()
+
+    if archive_path is None:
+        return False
+
+    deployed_result = do_deploy(archive_path)
+
+    return deployed_result
 
 
 def do_clean(number=0):
-    """Delete out-of-date archives.
-    Args:
-        number (int): The number of archives to keep.
-    If number is 0 or 1, keeps only the most recent archive. If
-    number is 2, keeps the most and second-most recent archives,
-    etc.
     """
-    number = 1 if int(number) == 0 else int(number)
+    Deletes out-of-date archives.
+    Args:
+        number: number of the archives,
+        including the most recent, to keep.
+    """
 
-    archives = sorted(os.listdir("versions"))
-    [archives.pop() for i in range(number)]
-    with lcd("versions"):
-        [local("rm ./{}".format(a)) for a in archives]
+    if int(number) == 0 or int(number) == 1:
+        number = 1
+    else:
+        number = int(number)
 
-    with cd("/data/web_static/releases"):
-        archives = run("ls -tr").split()
-        archives = [a for a in archives if "web_static_" in a]
-        [archives.pop() for i in range(number)]
-        [run("rm -rf ./{}".format(a)) for a in archives]
+    try:
+        # Delete all unnecessary archives (all archives
+        # minus the number to keep) in the versions folder
+        list_of_version = local('ls -t versions', capture=True).split('\n')
+        versions_to_del = list_of_version[number:]
+
+        for version in versions_to_del:
+            local("rm -r versions/{}".format(version))
+
+        # Delete all unnecessary archives (all archives
+        # minus the number to keep) in the
+        # /data/web_static/releases folder
+        list_of_version = sorted(run(
+            'ls -t /data/web_static/releases').split()
+            )
+
+        versions_to_del = list_of_version[number:]
+
+        for version in versions_to_del:
+            if "web_static_" in archive:
+                run("rm -r /data/web_static/releases'{}".format(version))
+    except Exception as e:
+        pass

@@ -1,88 +1,79 @@
-# Configures a web server for deployment of web_static.
-
-# Nginx configuration file
-$nginx_conf = "server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    add_header X-Served-By ${hostname};
-    root   /var/www/html;
-    index  index.html index.htm;
-    location /hbnb_static {
-        alias /data/web_static/current;
-        index index.html index.htm;
-    }
-    location /redirect_me {
-        return 301 https://th3-gr00t.tk;
-    }
-    error_page 404 /404.html;
-    location /404 {
-      root /var/www/html;
-      internal;
-    }
-}"
-
-package { 'nginx':
-  ensure   => 'present',
-  provider => 'apt'
-} ->
-
-file { '/data':
-  ensure  => 'directory'
-} ->
-
-file { '/data/web_static':
-  ensure => 'directory'
-} ->
-
-file { '/data/web_static/releases':
-  ensure => 'directory'
-} ->
-
-file { '/data/web_static/releases/test':
-  ensure => 'directory'
-} ->
-
-file { '/data/web_static/shared':
-  ensure => 'directory'
-} ->
-
-file { '/data/web_static/releases/test/index.html':
-  ensure  => 'present',
-  content => "Holberton School Puppet\n"
-} ->
-
-file { '/data/web_static/current':
-  ensure => 'link',
-  target => '/data/web_static/releases/test'
-} ->
-
-exec { 'chown -R ubuntu:ubuntu /data/':
-  path => '/usr/bin/:/usr/local/bin/:/bin/'
+# Install Nginx if it not already installed
+exec { 'apt-get update':
+  path => '/usr/bin:/bin',
 }
 
-file { '/var/www':
-  ensure => 'directory'
-} ->
+package { 'nginx':
+  ensure => installed,
+}
 
-file { '/var/www/html':
-  ensure => 'directory'
-} ->
+# Create the folder /data/ if it doesn’t already exist
+user { 'ubuntu':
+  ensure => present,
+}
 
-file { '/var/www/html/index.html':
-  ensure  => 'present',
-  content => "Holberton School Nginx\n"
-} ->
+group { 'ubuntu':
+  ensure => present,
+}
 
-file { '/var/www/html/404.html':
-  ensure  => 'present',
-  content => "Ceci n'est pas une page\n"
-} ->
+file { '/data/':
+  ensure => directory,
+  recurse => true,
+  owner   => 'ubuntu',
+  group   => 'ubuntu',
+}
 
-file { '/etc/nginx/sites-available/default':
-  ensure  => 'present',
-  content => $nginx_conf
-} ->
+# Create the folder /data/web_static/ if it doesn’t already exist
+file { '/data/web_static/':
+  ensure => directory,
+}
 
-exec { 'nginx restart':
-  path => '/etc/init.d/'
+# Create the folder /data/web_static/releases/ if it doesn’t already exist
+file { '/data/web_static/releases/':
+  ensure => directory,
+}
+
+# Create the folder /data/web_static/shared/ if it doesn’t already exist
+file { '/data/web_static/shared/':
+  ensure => directory,
+}
+
+# Create the folder /data/web_static/releases/test/ if it doesn’t already exist
+file { '/data/web_static/releases/test/':
+  ensure => directory,
+}
+
+# Create a fake HTML file /data/web_static/releases/test/index.html (with simple content, to test your Nginx configuration)
+file { '/data/web_static/releases/test/index.html':
+  content => '<html>
+  <head></head>
+  <body>
+    <h1>Testing Nginx configuration</h1>
+  </body>
+</html>',
+  mode    => '0644',
+  owner   => 'ubuntu',
+  group   => 'ubuntu',
+}
+
+# Create a symbolic link /data/web_static/current linked to the /data/web_static/releases/test/ folder.
+# If the symbolic link already exists, it should be deleted and recreated every time the script is ran.
+exec { 'ln -sfn /data/web_static/releases/test/ /data/web_static/current':
+  path => ['/usr/bin', '/bin'],
+}
+
+# Update the Nginx configuration to serve the content of /data/web_static/current/ to hbnb_static (ex: https://mydomainname.tech/hbnb_static
+
+# Add the location configuration to the Nginx.
+$location='\n\tlocation /hbnb_static {\n\
+        \talias /data/web_static/current/;\n\
+        }'
+exec { 'edit_config_file':
+  command => "sudo sed -i '/server_name _;/a \\ ${location}' /etc/nginx/sites-available/default",
+  path    => '/usr/bin:/bin',
+}
+
+exec { 'restart_Nginx':
+  command => 'sudo service nginx restart > /dev/null',
+  path    => '/usr/bin:/bin',
 }
