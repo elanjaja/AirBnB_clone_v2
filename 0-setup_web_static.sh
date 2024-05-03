@@ -1,44 +1,62 @@
 #!/usr/bin/env bash
-# Prepare my webservers (web-01 & web-02)
+# sets up your web servers for the deployment of web_static
 
-# uncomment for easy debugging
-#set -x
-
-# colors
-blue='\e[1;34m'
-#brown='\e[0;33m'
-green='\e[1;32m'
-reset='\033[0m'
-
-echo -e "${blue}Updating and doing some minor checks...${reset}\n"
-
-# install nginx if not present
-if [ ! -x /usr/sbin/nginx ]; then
-	sudo apt-get update -y -qq && \
-	     sudo apt-get install -y nginx
+# Install Nginx if it not already installed
+if ! command -v nginx &> /dev/null; then
+	apt-get update
+	apt install nginx -y
 fi
 
-echo -e "\n${blue}Setting up some minor stuff.${reset}\n"
+# Create the folder /data/ if it doesn’t already exist
+if ! [ -d "/data/" ]; then
+	mkdir "/data/"
+fi
 
-# Create directories...
-sudo mkdir -p /data/web_static/releases/test /data/web_static/shared/
+# Create the folder /data/web_static/ if it doesn’t already exist
+if ! [ -d "/data/web_static/" ]; then
+        mkdir "/data/web_static/"
+fi
 
-# create index.html for test directory
-echo "<h1>Welcome to th3gr00t.tech <\h1>" | sudo dd status=none of=/data/web_static/releases/test/index.html
+# Create the folder /data/web_static/releases/ if it doesn’t already exist
+if ! [ -d "/data/web_static/releases/" ]; then
+        mkdir "/data/web_static/releases/"
+fi
 
-# create symbolic link
-sudo ln -sf /data/web_static/releases/test /data/web_static/current
+# Create the folder /data/web_static/shared/ if it doesn’t already exist
+if ! [ -d "/data/web_static/shared/" ]; then
+        mkdir "/data/web_static/shared/"
+fi
 
-# give user ownership to directory
-sudo chown -R ubuntu:ubuntu /data/
+# Create the folder /data/web_static/releases/test/ if it doesn’t already exist
+if ! [ -d "/data/web_static/releases/test/" ]; then
+        mkdir "/data/web_static/releases/test/"
+fi
 
-# backup default server config file
-sudo cp /etc/nginx/sites-enabled/default nginx-sites-enabled_default.backup
+# Create a fake HTML file /data/web_static/releases/test/index.html (with simple content, to test your Nginx configuration)
+touch /data/web_static/releases/test/index.html
 
-# Set-up the content of /data/web_static/current/ to redirect
-# to domain.tech/hbnb_static
-sudo sed -i '37i\\tlocation /hbnb_static/ {\n\t\talias /data/web_static/current/;\n\t}\n' /etc/nginx/sites-available/default
+PATH_FILE=/data/web_static/releases/test/index.html
 
-sudo service nginx restart
+content="<html>
+<head>
+</head>
+<body>
+	<h1>Testing Nginx configuration</h1>
+</body>
+</html>"
 
-echo -e "${green}Completed${reset}"
+echo "$content" | sudo tee "$PATH_FILE"
+
+# Create a symbolic link /data/web_static/current linked to the /data/web_static/releases/test/ folder. If the symbolic link already exists, it should be deleted and recreated every time the script is ran.
+ln -sfn /data/web_static/releases/test/ /data/web_static/current
+
+# Give ownership of the /data/ folder to the ubuntu user AND group (you can assume this user and group exist). This should be recursive; everything inside should be created/owned by this user/group.
+chown -R ubuntu:ubuntu /data/
+
+# Update the Nginx configuration to serve the content of /data/web_static/current/ to hbnb_static (ex: https://mydomainname.tech/hbnb_static
+# Add the location configuration to the Nginx
+CONF_PATH=/etc/nginx/sites-enabled/default
+
+sudo sed -i "/listen 80 default_server;/a\\\tlocation /hbnb_static/ {\n\talias /data/web_static/current/;\n\t}" "$CONF_PATH"
+
+service nginx restart
